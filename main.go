@@ -2,63 +2,106 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
-func SyncDestination(syncChan chan string) {
+var source = "./source"
+var destination = "./destination"
+
+func SyncFileCreate(syncChan chan FileEntry) {
 	for {
 		file := <-syncChan
-		fmt.Println("Syncing file:", file)
+		actualFilePath := strings.Replace(file.Path, "source", "", 1)
+		if err := os.MkdirAll(destination+filepath.Dir(actualFilePath), 0755); err != nil {
+			log.Println("Failed to create directory:", err)
+		}
+		fmt.Println("New File", file.FileInfo.Name(), file.Path)
+		// Do something with the file here
+		sourceFile, err := os.Open(file.Path)
+		if err != nil {
+			log.Println("Failed to sync file:", file.FileInfo.Name())
+		}
+
+		destFile, err := os.Create(destination + actualFilePath)
+		if err != nil {
+			log.Println("Failed to sync file:", file.FileInfo.Name())
+		}
+
+		_, err = io.Copy(destFile, sourceFile)
+		if err != nil {
+			log.Println("Failed to sync file:", file.FileInfo.Name())
+		}
+	}
+}
+
+func SyncFileUpdate(syncChan chan FileEntry) {
+	for {
+		file := <-syncChan
+		fmt.Println("Update File:", file.FileInfo.Name(), file.Path)
 		// Do something with the file here
 	}
 }
+
+type FileEntry struct {
+	FileInfo os.FileInfo
+	Path     string
+}
+
 func main() {
 	// Define the directory to watch
-	dir := "./source"
-	syncChannel := make(chan string)
+
+	syncFileCreate := make(chan FileEntry)
+	syncFileUpdate := make(chan FileEntry)
+	// syncFileDelete := make(chan FileEntry)
+
 	// Create a map to store file modification times
 	fileModTimes := make(map[string]time.Time)
 
-	go SyncDestination(syncChannel)
+	go SyncFileCreate(syncFileCreate)
+	go SyncFileUpdate(syncFileUpdate)
 	// Start an infinite loop to check for changes
 	for {
-		// Open the directory
-		d, err := os.Open(dir)
+		entries := make([]FileEntry, 0)
+		err := filepath.Walk(source, func(path string, entry os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			entries = append(entries, FileEntry{
+				Path:     path,
+				FileInfo: entry,
+			})
+			return nil
+		})
 		if err != nil {
-			fmt.Println("Error opening directory:", err)
-			return
-		}
-		defer d.Close()
-
-		// Read the directory entries
-		entries, err := d.Readdir(-1)
-		if err != nil {
-			fmt.Println("Error reading directory:", err)
-			return
+			fmt.Println("Error walking directory:", err)
 		}
 
-		// Check for new or modified files
-		for _, entry := range entries {
-			if entry.Mode().IsRegular() {
+		// // Check for new or modified files
+		for _, fileEntry := range entries {
+			if fileEntry.FileInfo.Mode().IsRegular() {
 				// Check if file exists in the map
-				if modTime, ok := fileModTimes[entry.Name()]; ok {
+				if modTime, ok := fileModTimes[fileEntry.FileInfo.Name()]; ok {
 					// Compare modification times
-					if modTime != entry.ModTime() {
-						fmt.Println("File modified:", entry.Name())
-						syncChannel <- entry.Name()
+					if modTime != fileEntry.FileInfo.ModTime() {
+						syncFileUpdate <- fileEntry
 						// Update modification time in the map
-						fileModTimes[entry.Name()] = entry.ModTime()
+						fileModTimes[fileEntry.FileInfo.Name()] = fileEntry.FileInfo.ModTime()
 					}
 				} else {
+					syncFileCreate <- fileEntry
 					// Add new file to the map
-					fmt.Println("New file:", entry.Name())
-					fileModTimes[entry.Name()] = entry.ModTime()
+					fileModTimes[fileEntry.FileInfo.Name()] = fileEntry.FileInfo.ModTime()
 				}
 			}
 		}
-
-		// Sleep for a while before checking again
+		//make entries nil
+		entries = nil
+		// // Sleep for a while before checking again
 		time.Sleep(1 * time.Second)
 	}
 }
