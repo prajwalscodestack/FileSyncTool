@@ -1,6 +1,8 @@
 package main
 
 import (
+	"filesynctool/models"
+	"filesynctool/pkg/fileops"
 	"fmt"
 	"io"
 	"log"
@@ -10,14 +12,11 @@ import (
 	"time"
 )
 
-var source = "./source"
-var destination = "./destination"
-
 func SyncFileCreate(syncChan chan FileEntry) {
 	for {
 		file := <-syncChan
-		actualFilePath := strings.Replace(file.Path, "source", "", 1)
-		if err := os.MkdirAll(destination+filepath.Dir(actualFilePath), 0755); err != nil {
+		dst := strings.Replace(file.Path, models.Source, "", 1)
+		if err := os.MkdirAll(models.Destination+filepath.Dir(dst), 0755); err != nil {
 			log.Println("Failed to create directory:", err)
 		}
 		fmt.Println("New File", file.FileInfo.Name(), file.Path)
@@ -27,7 +26,7 @@ func SyncFileCreate(syncChan chan FileEntry) {
 			log.Println("Failed to sync file:", file.FileInfo.Name())
 		}
 
-		destFile, err := os.Create(destination + actualFilePath)
+		destFile, err := os.Create(models.Destination + dst)
 		if err != nil {
 			log.Println("Failed to sync file:", file.FileInfo.Name())
 		}
@@ -44,6 +43,10 @@ func SyncFileUpdate(syncChan chan FileEntry) {
 		file := <-syncChan
 		fmt.Println("Update File:", file.FileInfo.Name(), file.Path)
 		// Do something with the file here
+		dest := strings.Replace(file.Path, models.Source, "", 1)
+		if err := fileops.CopyFile(file.Path, dest); err != nil {
+			log.Println("Failed to sync file:", file.FileInfo.Name(), err)
+		}
 	}
 }
 
@@ -53,8 +56,12 @@ type FileEntry struct {
 }
 
 func main() {
+	models.SetFlags()
 	// Define the directory to watch
-
+	//validate path
+	if models.Source == "" || models.Destination == "" {
+		panic("source or destination path can't be empty")
+	}
 	syncFileCreate := make(chan FileEntry)
 	syncFileUpdate := make(chan FileEntry)
 	// syncFileDelete := make(chan FileEntry)
@@ -67,7 +74,7 @@ func main() {
 	// Start an infinite loop to check for changes
 	for {
 		entries := make([]FileEntry, 0)
-		err := filepath.Walk(source, func(path string, entry os.FileInfo, err error) error {
+		err := filepath.Walk(models.Source, func(path string, entry os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
