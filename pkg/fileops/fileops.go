@@ -35,3 +35,11 @@ func DeleteFile(src string) error {
 	}
 	return nil
 }
+
+func RemoveDir(src string) error {
+	if err := os.RemoveAll(models.Destination + src); err != nil {
+		log.Println("Failed to delete dir:", src)
+		return err
+	}
+	return nil
+}
