@@ -27,3 +27,11 @@ func CopyFile(src, dest string) error {
 	}
 	return err
 }
+
+func DeleteFile(src string) error {
+	if err := os.Remove(models.Destination + src); err != nil {
+		log.Println("Failed to delete file:", src)
+		return err
+	}
+	return nil
+}

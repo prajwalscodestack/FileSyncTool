@@ -49,6 +49,16 @@ func SyncFileUpdate(syncChan chan FileEntry) {
 		}
 	}
 }
+func SyncFileDelete(syncChan chan FileEntry) {
+	for {
+		deletedFile := <-syncChan
+		fmt.Println("Delete File:", deletedFile.Path)
+		dst := strings.Replace(deletedFile.Path, models.Source, "", 1)
+		if err := fileops.DeleteFile(dst); err != nil {
+			log.Println("Failed to delete file:", deletedFile.Path, err)
+		}
+	}
+}
 
 type FileEntry struct {
 	FileInfo os.FileInfo
@@ -64,13 +74,15 @@ func main() {
 	}
 	syncFileCreate := make(chan FileEntry)
 	syncFileUpdate := make(chan FileEntry)
-	// syncFileDelete := make(chan FileEntry)
+	syncFileDelete := make(chan FileEntry)
 
 	// Create a map to store file modification times
 	fileModTimes := make(map[string]time.Time)
 
 	go SyncFileCreate(syncFileCreate)
 	go SyncFileUpdate(syncFileUpdate)
+	go SyncFileDelete(syncFileDelete)
+
 	// Start an infinite loop to check for changes
 	for {
 		entries := make([]FileEntry, 0)
@@ -88,26 +100,40 @@ func main() {
 			fmt.Println("Error walking directory:", err)
 		}
 
-		// // Check for new or modified files
+		//exsting file
+		existingFiles := make(map[string]bool)
+
+		// Check for new or modified files
 		for _, fileEntry := range entries {
+			existingFiles[fileEntry.Path] = true
 			if fileEntry.FileInfo.Mode().IsRegular() {
 				// Check if file exists in the map
-				if modTime, ok := fileModTimes[fileEntry.FileInfo.Name()]; ok {
+				if modTime, ok := fileModTimes[fileEntry.Path]; ok {
 					// Compare modification times
 					if modTime != fileEntry.FileInfo.ModTime() {
 						syncFileUpdate <- fileEntry
 						// Update modification time in the map
-						fileModTimes[fileEntry.FileInfo.Name()] = fileEntry.FileInfo.ModTime()
+						fileModTimes[fileEntry.Path] = fileEntry.FileInfo.ModTime()
 					}
 				} else {
 					syncFileCreate <- fileEntry
 					// Add new file to the map
-					fileModTimes[fileEntry.FileInfo.Name()] = fileEntry.FileInfo.ModTime()
+					fileModTimes[fileEntry.Path] = fileEntry.FileInfo.ModTime()
 				}
+			}
+		}
+		//check for deleted files
+		for path, _ := range fileModTimes {
+			if _, ok := existingFiles[path]; !ok {
+				syncFileDelete <- FileEntry{
+					Path: path,
+				}
+				delete(fileModTimes, path)
 			}
 		}
 		//make entries nil
 		entries = nil
+		existingFiles = nil
 		// // Sleep for a while before checking again
 		time.Sleep(1 * time.Second)
 	}
