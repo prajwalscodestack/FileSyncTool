@@ -3,43 +3,34 @@ package fileops
 import (
 	"filesynctool/models"
 	"io"
-	"log"
 	"os"
+	"path/filepath"
 )
 
 func CopyFile(src, dest string) error {
 	sourceFile, err := os.Open(src)
 	if err != nil {
-		log.Println("Failed to copy file:", src)
 		return err
 	}
+	defer sourceFile.Close()
 
-	destFile, err := os.Create(models.Destination + dest)
+	destPath := filepath.Join(models.Destination, dest)
+	destFile, err := os.Create(destPath)
 	if err != nil {
-		log.Println("Failed to copy file:", src)
 		return err
 	}
+	defer destFile.Close()
 
 	_, err = io.Copy(destFile, sourceFile)
-	if err != nil {
-		log.Println("Failed to copy file:", src)
-		return err
-	}
 	return err
 }
 
 func DeleteFile(src string) error {
-	if err := os.Remove(models.Destination + src); err != nil {
-		log.Println("Failed to delete file:", src)
-		return err
-	}
-	return nil
+	err := os.Remove(filepath.Join(models.Destination, src))
+	return err
 }
 
 func RemoveDir(src string) error {
-	if err := os.RemoveAll(models.Destination + src); err != nil {
-		log.Println("Failed to delete dir:", src)
-		return err
-	}
-	return nil
+	err := os.RemoveAll(filepath.Join(models.Destination, src))
+	return err
 }
