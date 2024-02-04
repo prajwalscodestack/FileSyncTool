@@ -30,12 +30,7 @@ To use the File Synchronization Tool, follow these steps:
    ./filesynctool -source <source_path> -destination <destination_path>
    ```
    Replace `<source_path>` with the path to the source directory and `<destination_path>` with the path to the destination directory.
-
-2. **Monitor Source Folder for Changes:**
-   ```
-   ./filesynctool -source <source_path>
-   ```
-   The tool will continuously monitor the specified source folder for file operations and synchronize changes to the destination folder.
+   
 
 ## Contributing
 
