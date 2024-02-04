@@ -27,10 +27,10 @@ To use the File Synchronization Tool, follow these steps:
 
 1. **Synchronize Files and Directories:**
    ```
-   ./filesynctool -source <source_path> -destination <destination_path>
+   ./filesynctool -source <source_path> -destination <destination_path> -syncBuffer <buffer_size>
    ```
-   Replace `<source_path>` with the path to the source directory and `<destination_path>` with the path to the destination directory.
-   
+   Replace `<source_path>` with the path to the source directory, `<destination_path>` with the path to the destination directory, and `<buffer_size>` with the buffer size for synchronization operations. The buffer size determines the number of files that can be processed concurrently during synchronization. The default buffer size if 100.
+
 
 ## Contributing
 
