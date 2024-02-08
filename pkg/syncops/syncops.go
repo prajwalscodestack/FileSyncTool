@@ -7,12 +7,88 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 )
 
-func SyncFileCreate(syncChan chan models.FileEntry) {
+type Watcher struct {
+	SyncFileCreate chan models.FileEntry
+	SyncFileUpdate chan models.FileEntry
+	SyncFileDelete chan models.FileEntry
+	Location       string
+}
+
+func NewWatcher(location string) *Watcher {
+	return &Watcher{
+		SyncFileCreate: make(chan models.FileEntry),
+		SyncFileUpdate: make(chan models.FileEntry),
+		SyncFileDelete: make(chan models.FileEntry),
+		Location:       location,
+	}
+}
+func (w *Watcher) LauchSyncWorker() {
+	go w.SyncCreate()
+	go w.SyncUpdate()
+	go w.SyncDelete()
+}
+
+// TODO: Should watch location provided and send the changes to broker
+func (w *Watcher) Watch() {
+	// Create a map to store file modification times
+	fileModTimes := make(map[string]models.FileMod)
+	// Start an infinite loop to check for changes
 	for {
-		file := <-syncChan
-		dst, err := filepath.Rel(models.Source, file.Path)
+		entries := make([]models.FileEntry, 0)
+		err := filepath.Walk(w.Location, func(path string, entry os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			entries = append(entries, models.NewFileEntry(path, entry))
+			return nil
+		})
+		if err != nil {
+			fmt.Println("Error walking directory:", err)
+		}
+
+		// Check for new or modified files
+		for _, fileEntry := range entries {
+			if fileEntry.FileInfo.Mode().IsRegular() {
+				// Check if file exists in the map
+				if filemod, ok := fileModTimes[fileEntry.Path]; ok {
+					// Compare modification times
+					if filemod.ModTime != fileEntry.FileInfo.ModTime() {
+						w.SyncFileUpdate <- fileEntry
+						// Update modification time in the map
+						fileModTimes[fileEntry.Path] = models.NewFileMod(fileEntry)
+						models.NewFileMod(fileEntry)
+					}
+				} else {
+					w.SyncFileCreate <- fileEntry
+					// Add new file to the map
+					fileModTimes[fileEntry.Path] = models.NewFileMod(fileEntry)
+				}
+			}
+			if fileEntry.FileInfo.IsDir() {
+				fileModTimes[fileEntry.Path] = models.NewFileMod(fileEntry)
+			}
+		}
+		//check for deleted files
+		for path, filemod := range fileModTimes {
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				w.SyncFileDelete <- models.FileEntry{
+					Path:     path,
+					FileInfo: filemod.FileEntry.FileInfo,
+				}
+				delete(fileModTimes, path)
+			}
+		}
+		// // Sleep for a while before checking again
+		time.Sleep(1 * time.Second)
+	}
+}
+func (w *Watcher) SyncCreate() {
+	for {
+		file := <-w.SyncFileCreate
+		dst, err := filepath.Rel(w.Location, file.Path)
 		if err != nil {
 			log.Println("Failed to get relative path:", err)
 		}
@@ -27,12 +103,12 @@ func SyncFileCreate(syncChan chan models.FileEntry) {
 	}
 }
 
-func SyncFileUpdate(syncChan chan models.FileEntry) {
+func (w *Watcher) SyncUpdate() {
 	for {
-		file := <-syncChan
+		file := <-w.SyncFileUpdate
 		fmt.Println("Update File:", file.FileInfo.Name(), file.Path)
 		// Do something with the file here
-		dst, err := filepath.Rel(models.Source, file.Path)
+		dst, err := filepath.Rel(w.Location, file.Path)
 		if err != nil {
 			log.Println("Failed to get relative path:", err)
 		}
@@ -42,11 +118,11 @@ func SyncFileUpdate(syncChan chan models.FileEntry) {
 	}
 }
 
-func SyncFileDelete(syncChan chan models.FileEntry) {
+func (w *Watcher) SyncDelete() {
 	for {
-		file := <-syncChan
+		file := <-w.SyncFileDelete
 		fmt.Println("Delete File:", file.Path)
-		dst, err := filepath.Rel(models.Source, file.Path)
+		dst, err := filepath.Rel(w.Location, file.Path)
 		if err != nil {
 			log.Println("Failed to get relative path:", err)
 		}
